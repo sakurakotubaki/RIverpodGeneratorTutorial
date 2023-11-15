@@ -95,3 +95,70 @@ class Post with _$Post {
 今回は、FutureProviderを使用して外部APIからHTTP GETメソッドを使用して、データを非同期に取得する。
 
 [参考になりそうなZennの本](https://zenn.dev/joo_hashi/articles/afec11fe63ae3f)
+## FutureProviderの使用例
+generatorを使用しない例
+```dart
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:rivepod_basic/domain/user.dart';
+// 今回使用する機能を抽象クラスとして定義します
+abstract class IUserService {
+  Future<List<User>> fetchUsers();
+}
+
+/* IUserServiceというインターフェースを実装したクラスを作成します
+インターフェースとは、クラスが実装しなければならないメソッドを定義したものです。他の専門用語だと、外の世界と接続するための窓口とも言われます。
+*/
+class UserService implements IUserService {
+  // テストのときに、モックを引数で渡すので必要
+  final http.Client client;
+  UserService(this.client);
+  // httpパッケージを使用して外部APIからデータを取得します
+  @override
+  Future<List<User>> fetchUsers() async {
+    final response =
+        await http.get(Uri.parse('https://jsonplaceholder.typicode.com/users'));
+
+    if (response.statusCode == 200) {
+      // サーバーが200 OKを返した場合、JSONを解析してUserModelに変換します
+      var jsonData = jsonDecode(response.body) as List;// as Listとするのは、jsonDecodeの戻り値がList<dynamic>型であるため
+      // リストの要素をUserModelに変換して返却します
+      return jsonData.map((user) => User.fromJson(user)).toList();
+    } else {
+      // サーバーがエラーレスポンスを返した場合は、例外をスローします
+      throw Exception('Failed to load user');
+    }
+  }
+}
+
+// 今までの書き方
+final userServiceProvider = Provider((ref) {
+  // 引数を書かないとエラーが出る
+  return UserService(http.Client());
+});
+
+final userFutureProvider = FutureProvider.autoDispose<List<User>>((ref) async {
+  final users = ref.read(userServiceProvider);
+  return await users.fetchUsers();
+});
+```
+
+## generatorを使用した例
+プロバイダーではなくて、関数を定義して、コードを書きコマンドを実行するとプロバイダーのファイルが自動生成される。
+`@riverpod`とつけると、状態が破棄される。破棄したくないときは、`@Riverpod(keepAlive: true)`とアノテーションをつける。
+
+```dart
+import 'package:rivepod_basic/application/repository/user_api.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../domain/user.dart';
+part 'user_provider.g.dart';
+
+@riverpod
+Future<List<User>> fetchUser(FetchUserRef ref) async {
+  final users = ref.read(userServiceProvider);
+  return await users.fetchUsers();
+}
+```
